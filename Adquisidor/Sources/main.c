@@ -2,13 +2,15 @@
 
 
 void Init_MCU(void);
+void InitADC (void);
 
 uint8_t mediciones[100];
 uint16_t indice = 0;
 
 int main(void)
 {
-	
+	Init_MCU();
+	InitADC();
 	
 	
 	ADC0_SC1A = (1*ADC_SC1_AIEN_MASK) | (0*ADC_SC1_DIFF_MASK) | ADC_SC1_ADCH(4); //Interrupciones habilitadas, diferencial desactivado, canal 4 (PTE21)
@@ -23,6 +25,8 @@ int main(void)
 void ADC0_IRQHandler()
 {
 	mediciones[indice++] = ADC0_RA;
+	if(indice < 100)
+		ADC0_SC1A |= ADC_SC1_ADCH(4); 
 }
 
 void Init_MCU(void) {
@@ -81,8 +85,8 @@ void InitADC (void)
 	
 	//Habilito NVIC ADC0
 	
-	NVIC_ICPR |= 1 << 31;
-	NVIC_ISER |= 1 << 31;
+	NVIC_ICPR |= 1 << 15;
+	NVIC_ISER |= 1 << 15;
 	
 	//Tiempo de conversión de aproximadamente 604 nanosegundos (con el clock a 48MHz)
 }
