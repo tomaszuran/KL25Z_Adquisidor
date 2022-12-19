@@ -1,32 +1,38 @@
 #include "derivative.h" /* include peripheral declarations */
-
+#include <stdlib.h>
 
 void Init_MCU(void);
-void InitADC (void);
+void Init_ADC(void);
+void Init_Timer(void);
+void Adquisidor(uint16_t mod, uint8_t prescaler, uint32_t muestras);
 
-uint8_t mediciones[100];
-uint16_t indice = 0;
+uint8_t * mediciones;
+uint32_t indice = 0;
+uint32_t max_muestras = 0;
+
+uint8_t muestreo_terminado = 0;
 
 int main(void)
 {
 	Init_MCU();
-	InitADC();
+	Init_ADC();
+	Init_Timer();
 	
+	Adquisidor(48000, 0, 1001);
+	while(muestreo_terminado == 0){}
+	Adquisidor(48000, 0, 1002);
+	while(muestreo_terminado == 0){}
+	Adquisidor(48000, 0, 1003);
+	while(muestreo_terminado == 0){}
+	Adquisidor(48000, 0, 1004);
+	while(muestreo_terminado == 0){}
 	
-	ADC0_SC1A = (1*ADC_SC1_AIEN_MASK) | (0*ADC_SC1_DIFF_MASK) | ADC_SC1_ADCH(4); //Interrupciones habilitadas, diferencial desactivado, canal 4 (PTE21)
 	
 	for(;;) {	   
 	 
 	}
 	
 	return 0;
-}
-
-void ADC0_IRQHandler()
-{
-	mediciones[indice++] = ADC0_RA;
-	if(indice < 100)
-		ADC0_SC1A |= ADC_SC1_ADCH(4); 
 }
 
 void Init_MCU(void) {
@@ -58,7 +64,7 @@ void Init_MCU(void) {
 	}
 }
 
-void InitADC (void)
+void Init_ADC (void)
 {
 	//Activo el modulo del ADC
 	SIM_SCGC6 |= SIM_SCGC6_ADC0_MASK;
@@ -78,15 +84,70 @@ void InitADC (void)
 	//2 - High speed configuration enabled
 	//1-0 - Long time sampling select (no importa)
 			
-	ADC0_SC2 = 0; //Compare function disabled,DMA is disabled
+	ADC0_SC2 = 0; //Funcion de comparación deshabilitada, DMA deshabilitado
 
-	ADC0_SC3 = 0; //uncalibrated, only one conversion, hardware average disabled.
+	ADC0_SC3 = ADC_SC3_ADCO_MASK; //sin calibrar, conversión continua, promedio de hardware deshabilitado
 	
 	
 	//Habilito NVIC ADC0
 	
-	NVIC_ICPR |= 1 << 15;
-	NVIC_ISER |= 1 << 15;
+	//NVIC_ICPR |= 1 << 15;
+	//NVIC_ISER |= 1 << 15;
 	
 	//Tiempo de conversión de aproximadamente 604 nanosegundos (con el clock a 48MHz)
+	
+	ADC0_SC1A = (0*ADC_SC1_AIEN_MASK) | (0*ADC_SC1_DIFF_MASK) | ADC_SC1_ADCH(4); //Interrupciones deshabilitadas, diferencial desactivado, canal 4 (PTE21)
+}
+
+void Init_Timer(void)
+{
+	SIM_SCGC6 |= SIM_SCGC6_TPM0_MASK;
+	SIM_SOPT2 = (SIM_SOPT2 & ~SIM_SOPT2_TPMSRC_MASK) | SIM_SOPT2_TPMSRC(1);
+	TPM0_SC = TPM_SC_TOIE_MASK | TPM_SC_CMOD(0) | TPM_SC_PS(0);
+	TPM0_MOD = 60000;
+	
+	NVIC_ICPR |= 1 << 17;
+	NVIC_ISER |= 1 << 17;
+}
+
+void FTM0_IRQHandler()
+{
+	TPM0_SC |= TPM_SC_TOF_MASK;
+	mediciones[indice++] = ADC0_RA;
+	if(indice >= max_muestras)
+	{
+		TPM0_SC &= ~TPM_SC_CMOD_MASK;
+		muestreo_terminado = 1;
+	}
+		
+}
+
+void Adquisidor(uint16_t mod, uint8_t prescaler, uint32_t muestras)
+{
+	if(mod > 65535)
+		return;
+	if(prescaler > 7)
+		return;
+	
+	if(muestras > 10000)
+		return;
+	
+	if(max_muestras != 0)
+	{
+		free(mediciones);
+	}
+	
+	max_muestras = muestras;
+	indice = 0;
+	
+	TPM0_MOD = mod;
+	TPM0_SC = (TPM0_SC & ~TPM_SC_PS_MASK) | TPM_SC_PS(prescaler);
+	muestreo_terminado = 0;
+	
+	mediciones = (uint8_t *) calloc(max_muestras, sizeof(uint8_t));
+	
+	if(mediciones != NULL)
+	{
+		TPM0_SC |= TPM_SC_CMOD(1);
+	}
 }
